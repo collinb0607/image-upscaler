@@ -1,0 +1,121 @@
+# Builds the downloadable apps and attaches them to a GitHub release.
+# Runs when a version tag is pushed:  git tag v1.0.1 && git push origin v1.0.1
+#
+# Each OS builds on its own runner because PyInstaller can't cross-compile:
+# a Mac app has to be built on a Mac.
+#
+# The upscaler itself is the official Real-ESRGAN ncnn-vulkan release (BSD-3),
+# downloaded here, checked against its SHA-256, and bundled with its two models.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:  # manual run from the Actions tab: builds only, no release
+
+permissions:
+  contents: write  # needed to create the release
+
+env:
+  ESRGAN_URL: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: Image-Upscaler-Windows.exe
+          - os: macos-latest  # Apple Silicon (M1 and newer)
+            asset: Image-Upscaler-macOS.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned to the versions the Windows build was tested with.
+      - run: python -m pip install pyinstaller==6.22.3 pillow==13.0.0 pillow-heif==1.8.1 certifi==2026.10.23 tkinterdnd2==0.7.0
+
+      - name: Get Real-ESRGAN (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Invoke-WebRequest "$env:ESRGAN_URL/realesrgan-ncnn-vulkan-20220424-windows.zip" -OutFile esrgan.zip
+          $h = (Get-FileHash esrgan.zip -Algorithm SHA256).Hash
+          if ($h -ne "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d") { throw "Checksum mismatch: $h" }
+          Expand-Archive esrgan.zip esrgan
+      - name: Get Real-ESRGAN (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -fsSL -o esrgan.zip "$ESRGAN_URL/realesrgan-ncnn-vulkan-20220424-macos.zip"
+          echo "e0ad05580abfeb25f8d8fb55aaf7bedf552c375b5b4d9bd3c8d59764d2cc333a  esrgan.zip" | shasum -a 256 -c
+          unzip -q esrgan.zip -d esrgan
+          chmod +x esrgan/realesrgan-ncnn-vulkan
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        # One file, no console window. The program, its OpenMP library and the
+        # two models go in an "engine" folder inside the app.
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name Image-Upscaler `
+            --add-binary "esrgan/realesrgan-ncnn-vulkan.exe;engine" --add-binary "esrgan/vcomp140.dll;engine" `
+            --add-data "esrgan/models/realesrgan-x4plus.param;engine/models" --add-data "esrgan/models/realesrgan-x4plus.bin;engine/models" `
+            --add-data "esrgan/models/realesrgan-x4plus-anime.param;engine/models" --add-data "esrgan/models/realesrgan-x4plus-anime.bin;engine/models" `
+            image_upscaler.py
+          Move-Item dist/Image-Upscaler.exe ${{ matrix.asset }}
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        # A .app bundle (one-dir: macOS apps are folders). ditto keeps the
+        # permissions and code signature that a plain zip would lose.
+        run: |
+          pyinstaller --noconfirm --windowed --name "Image Upscaler" \
+            --add-binary "esrgan/realesrgan-ncnn-vulkan:engine" \
+            --add-data "esrgan/models/realesrgan-x4plus.param:engine/models" --add-data "esrgan/models/realesrgan-x4plus.bin:engine/models" \
+            --add-data "esrgan/models/realesrgan-x4plus-anime.param:engine/models" --add-data "esrgan/models/realesrgan-x4plus-anime.bin:engine/models" \
+            image_upscaler.py
+          ditto -c -k --keepParent "dist/Image Upscaler.app" ${{ matrix.asset }}
+
+      # Smoke test: the app must start and still be running after 20 s
+      # (a missing module or library makes a frozen app quit at once).
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $p = Start-Process ./${{ matrix.asset }} -PassThru
+          Start-Sleep 20
+          if ($p.HasExited) { throw "App exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          # Checks the bundled program and models, Pillow and drag and drop inside the packaged app.
+          $t = Start-Process ./${{ matrix.asset }} -ArgumentList "--self-test" -PassThru -Wait
+          if ($t.ExitCode -ne 0) { throw "Self-test failed with code $($t.ExitCode)" }
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          "dist/Image Upscaler.app/Contents/MacOS/Image Upscaler" &
+          pid=$!
+          sleep 20
+          kill -0 $pid || { echo "App exited early"; exit 1; }
+          kill $pid
+          # Checks the bundled program and models, Pillow and drag and drop inside the packaged app.
+          "dist/Image Upscaler.app/Contents/MacOS/Image Upscaler" --self-test || { echo "Self-test failed with code $?"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}" Image-Upscaler-Windows.exe Image-Upscaler-macOS.zip
+          --repo "${{ github.repository }}" --title "Image Upscaler ${{ github.ref_name }}" --generate-notes
