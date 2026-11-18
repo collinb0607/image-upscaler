@@ -40,7 +40,7 @@ On a PC with both, the app uses the faster graphics card automatically.
   directly inside it), or use **Add files** / **Add folder**. JPG, PNG, WebP, HEIC (iPhone), BMP and
   TIFF. The list shows each image's size now and what it will become.
 - **Two models.** **Photos** (RealESRGAN x4plus) restores detail and removes JPEG blockiness in
-  real-world pictures. **Anime & drawings** (RealESRGAN x4plus anime) keeps lines clean and colours
+  real-world pictures. **Anime & drawings** (RealESRGAN x4plus anime) keeps lines clean and colors
   flat in anime, cartoons and illustrations, and is 2–3× faster.
 - **2× or 4×.** The models work at 4×. 2× is made from the 4× result with high-quality resampling,
   so it keeps the AI detail.
@@ -52,7 +52,7 @@ On a PC with both, the app uses the faster graphics card automatically.
   batch: replace, skip those, or stop. Each file is written under a temporary name and renamed
   when finished, so Cancel never leaves half a file.
 - **Private.** Results contain no camera or location data. Images are turned upright first, and
-  their colour profile is kept.
+  their color profile is kept.
 
 ## Run from source (Python)
 ### Setup (one time)

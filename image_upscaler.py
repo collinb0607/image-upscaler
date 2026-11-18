@@ -51,7 +51,7 @@ MODELS = {
         about="For photos and real-world pictures: restores detail and removes JPEG blockiness."),
     "Anime & drawings — RealESRGAN x4plus anime": dict(
         name="realesrgan-x4plus-anime",
-        about="For anime, cartoons, illustrations and other drawn art: clean lines and flat colours. "
+        about="For anime, cartoons, illustrations and other drawn art: clean lines and flat colors. "
               "2–3× faster than the photo model."),
 }
 SCALES = {"4× (the model's own size)": 4, "2× (made from the 4× result)": 2}
@@ -283,7 +283,7 @@ def probe_image(path):
 
 def prepare_input(path, tmp):
     """Write the image as a plain PNG the program can read, turned the right way
-    up (it ignores the rotation tag). Returns (png path, has transparency, colour profile)."""
+    up (it ignores the rotation tag). Returns (png path, has transparency, color profile)."""
     with Image.open(path) as im:
         if getattr(im, "n_frames", 1) > 1:
             im.seek(0)
@@ -292,7 +292,7 @@ def prepare_input(path, tmp):
     icc = im.info.get("icc_profile") if im.mode not in ("CMYK", "L", "LA", "I;16", "I", "F") else None
     if im.mode in ("I;16", "I;16B", "I;16L", "I", "F"):
         div = 256 if im.mode.startswith("I;16") else 1
-        im = im.convert("I").point(lambda v: v / div).convert("L")  # 16-bit grey: scale, don't clip
+        im = im.convert("I").point(lambda v: v / div).convert("L")  # 16-bit gray: scale, don't clip
     alpha = im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info)
     im = im.convert("RGBA" if alpha else "RGB")
     if alpha and im.getchannel("A").getextrema()[0] == 255:
@@ -875,7 +875,7 @@ class UpscalerApp:
                 if not self.engine:
                     raise DownloadError("The download didn't contain the upscaler program.")
             except Cancelled:
-                self.ui(lambda: self._finish_early("Cancelled."))
+                self.ui(lambda: self._finish_early("Canceled."))
                 return
             except Exception as e:
                 log_error(f"Download: {type(e).__name__}: {e}")
@@ -887,7 +887,7 @@ class UpscalerApp:
         try:
             for k, (iid, src, out) in enumerate(jobs):
                 if self.cancelled:
-                    self.ui(lambda i=iid: self._set_row(i, status="Cancelled"))
+                    self.ui(lambda i=iid: self._set_row(i, status="Canceled"))
                     results["cancelled"] += 1
                     continue
                 name = os.path.basename(src)
@@ -921,10 +921,10 @@ class UpscalerApp:
                     results["done"] += 1
                     first_out = first_out or out
                 except Cancelled:
-                    status = "Cancelled"
+                    status = "Canceled"
                     results["cancelled"] += 1
                 except EngineError as e:
-                    status = "Cancelled" if self.cancelled else f"Failed: {e}"
+                    status = "Canceled" if self.cancelled else f"Failed: {e}"
                     results["cancelled" if self.cancelled else "failed"] += 1
                     if not self.cancelled:
                         log_error(f"{src}\n{e}")
@@ -955,7 +955,7 @@ class UpscalerApp:
         if r["failed"]:
             parts.append(f"{r['failed']} failed — see the list")
         if r["cancelled"]:
-            parts.append(f"{r['cancelled']} cancelled")
+            parts.append(f"{r['cancelled']} canceled")
         text = ("Done! " if not (r["failed"] or r["cancelled"]) else "") + ", ".join(parts) + "."
         if self.gpu:
             text += f" Using {self.gpu}."
@@ -1046,7 +1046,7 @@ def support_link(parent, bg=None, font=None):
 
 # --------------------------------------------------------------------------- #
 #  The look (shared by the Offline Toolkit apps): white cards, a dark purple
-#  header fading to blue, blue actions. Only colours and fonts: no behaviour.
+#  header fading to blue, blue actions. Only colors and fonts: no behavior.
 # --------------------------------------------------------------------------- #
 THEME = dict(
     bg="#ffffff", card="#ffffff", border="#e2ddf0", text="#1c1433", muted="#6e6787", error="#c8364f",
@@ -1087,7 +1087,7 @@ def _indicator_image(root, kind, on, enabled, n=18, k=4):
         return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
 
     def colour_at(x, y):
-        """The colour of one sample point, or None where it's see-through."""
+        """The color of one sample point, or None where it's see-through."""
         c = n / 2
         d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5
         if kind == "check":
@@ -1131,7 +1131,7 @@ def _indicator_image(root, kind, on, enabled, n=18, k=4):
 
 
 def apply_theme(root):
-    """ttk's "clam" theme, recoloured (the native Windows and macOS themes ignore colours)."""
+    """ttk's "clam" theme, recoloured (the native Windows and macOS themes ignore colors)."""
     import tkinter.font as tkfont
     t, fam = THEME, ui_family()
     root.configure(bg=t["bg"])
@@ -1146,7 +1146,7 @@ def apply_theme(root):
     s.configure(".", background=t["bg"], foreground=t["text"], font=(fam, 10), bordercolor=t["border"],
                 focuscolor=t["blue"], lightcolor=t["card"], darkcolor=t["border"], troughcolor="#ece8f7")
     s.map(".", foreground=[("disabled", t["disabled"])])
-    s.map("TLabel", background=[("disabled", t["card"])])  # clam greys a disabled label's background
+    s.map("TLabel", background=[("disabled", t["card"])])  # clam grays a disabled label's background
     s.configure("TLabelframe", background=t["card"], bordercolor=t["border"], lightcolor=t["border"],
                 darkcolor=t["border"], relief="solid", borderwidth=1)
     s.configure("TLabelframe.Label", background=t["card"], foreground=t["purple2"], font=(fam, 11, "bold"))
