@@ -472,7 +472,7 @@ class UpscalerApp:
             except Exception as e:
                 log_error(f"GPU check: {type(e).__name__}: {e}")
                 self.ui(lambda e=e: self.status.config(
-                    text=f"The upscaler can't run on this computer: {explain_error(e)}", foreground="red"))
+                    text=f"The upscaler can't run on this computer: {explain_error(e)}", foreground=ERROR))
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
         threading.Thread(target=work, daemon=True).start()
@@ -532,7 +532,8 @@ class UpscalerApp:
     # ---- layout --------------------------------------------------------- #
     def _build_ui(self):
         pad = {"padx": 6, "pady": 3}
-        main = ttk.Frame(self.root, padding=10)
+        app_header(self.root, "Image Upscaler", "Enlarge photos 2× or 4× with AI on your own PC · free, private, no limits", "4×").pack(fill="x")
+        main = ttk.Frame(self.root, padding=(12, 10))
         main.pack(fill="both", expand=True)
         main.columnconfigure(0, weight=1)
         main.rowconfigure(0, weight=1)
@@ -561,7 +562,7 @@ class UpscalerApp:
         sb = ttk.Scrollbar(f, orient="vertical", command=self.tree.yview)
         sb.grid(row=1, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=sb.set)
-        self.list_lbl = ttk.Label(f, text="", foreground="gray")
+        self.list_lbl = ttk.Label(f, text="", foreground=MUTED)
         self.list_lbl.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         f = ttk.LabelFrame(main, text="2. Upscale", padding=8)
@@ -569,7 +570,7 @@ class UpscalerApp:
         ttk.Label(f, text="Model").grid(row=0, column=0, sticky="w", **pad)
         ttk.Combobox(f, values=list(MODELS), textvariable=self.v["model"], state="readonly",
                      width=42).grid(row=0, column=1, columnspan=3, sticky="w", **pad)
-        self.model_lbl = ttk.Label(f, text="", foreground="gray", wraplength=620)
+        self.model_lbl = ttk.Label(f, text="", foreground=MUTED, wraplength=620)
         self.model_lbl.grid(row=1, column=0, columnspan=4, sticky="w", **pad)
         ttk.Label(f, text="Size").grid(row=2, column=0, sticky="w", **pad)
         ttk.Combobox(f, values=list(SCALES), textvariable=self.v["scale"], state="readonly",
@@ -599,7 +600,7 @@ class UpscalerApp:
         self.progress.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.cancel_btn = ttk.Button(f, text="Cancel", command=self.cancel, state="disabled")
         self.cancel_btn.grid(row=0, column=1)
-        self.go_btn = ttk.Button(f, text="Upscale", command=self.start)
+        self.go_btn = PillButton(f, "Upscale", self.start)
         self.go_btn.grid(row=0, column=2, padx=(6, 0))
         foot = ttk.Frame(main)  # the status line, with the support link on its right
         foot.grid(row=4, column=0, sticky="ew", **pad)
@@ -762,7 +763,7 @@ class UpscalerApp:
             if ok < n and all(i["info"] for i in self.items.values()):
                 text += f", {n - ok} can't be upscaled (see Status)"
             text += "."
-        self.list_lbl.config(text=text, foreground="gray")
+        self.list_lbl.config(text=text, foreground=MUTED)
 
     # ---- running -------------------------------------------------------- #
     def _plan_outputs(self, todo, scale, ext):
@@ -1043,15 +1044,255 @@ def support_link(parent, bg=None, font=None):
     return link
 
 
+# --------------------------------------------------------------------------- #
+#  The look (shared by the Offline Toolkit apps): white cards, a dark purple
+#  header fading to blue, blue actions. Only colours and fonts: no behaviour.
+# --------------------------------------------------------------------------- #
+THEME = dict(
+    bg="#ffffff", card="#ffffff", border="#e2ddf0", text="#1c1433", muted="#6e6787", error="#c8364f",
+    purple="#2b1655", purple2="#4a2a8a", blue="#2f7cf6", blue_hover="#1d67dc", blue_soft="#e7f0ff",
+    blue_text="#1756c4", lavender_line="#7b5cd6", disabled="#c9c4d8", tint="#f5f1ff")
+MUTED, ERROR = THEME["muted"], THEME["error"]
+
+
+def ui_family():
+    try:
+        import tkinter.font as tkfont
+        families = set(tkfont.families())
+    except tk.TclError:
+        return "TkDefaultFont"
+    for name in ("Segoe UI", "SF Pro Text", "Helvetica Neue", "Inter", "Cantarell", "DejaVu Sans"):
+        if name in families:
+            return name
+    return "TkDefaultFont"
+
+
+def _indicator_image(root, kind, on, enabled, n=18, k=4):
+    """A checkbox (a blue box with a white tick) or radio button (a blue ring and dot),
+    drawn pixel by pixel with smooth edges (no image library needed)."""
+    t = THEME
+    blue = t["blue"] if enabled else t["disabled"]
+    edge = "#b9b0d6" if enabled else t["disabled"]
+
+    def rgb(h):
+        return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+
+    def seg_dist(px, py, ax, ay, bx, by):
+        dx, dy = bx - ax, by - ay
+        u = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+        return ((px - ax - u * dx) ** 2 + (py - ay - u * dy) ** 2) ** 0.5
+
+    def in_round_rect(x, y, r=4.6, lo=0.9, hi=n - 0.9):
+        cx, cy = min(max(x, lo + r), hi - r), min(max(y, lo + r), hi - r)
+        return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
+
+    def colour_at(x, y):
+        """The colour of one sample point, or None where it's see-through."""
+        c = n / 2
+        d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5
+        if kind == "check":
+            if not in_round_rect(x, y):
+                return None
+            if on:
+                tick = min(seg_dist(x, y, 4.8, 9.4, 7.8, 12.4), seg_dist(x, y, 7.8, 12.4, 13.4, 5.9))
+                return "#ffffff" if tick <= 1.15 else blue
+            return edge if not in_round_rect(x, y, 3.4, 2.3, n - 2.3) else "#ffffff"
+        if d > n / 2 - 0.9:
+            return None
+        if on:
+            return blue if d > n / 2 - 2.5 or d < 3.6 else "#ffffff"
+        return edge if d > n / 2 - 2.3 else "#ffffff"
+
+    img = tk.PhotoImage(master=root, width=n, height=n)
+    for py in range(n):
+        row = []
+        for px in range(n):
+            acc, hits = [0, 0, 0], 0
+            for sy in range(k):
+                for sx in range(k):
+                    col = colour_at(px + (sx + 0.5) / k, py + (sy + 0.5) / k)
+                    if col is not None:
+                        r, g, b = rgb(col)
+                        acc[0] += r
+                        acc[1] += g
+                        acc[2] += b
+                        hits += 1
+            if hits == 0:
+                row.append(None)
+                continue
+            # Blend with white for partly covered edge pixels (the widgets sit on white).
+            a = hits / (k * k)
+            r, g, b = (round(acc[i] / hits * a + 255 * (1 - a)) for i in range(3))
+            row.append("#%02x%02x%02x" % (r, g, b))
+        for px, col in enumerate(row):
+            if col is not None:
+                img.put(col, (px, py))
+    return img
+
+
+def apply_theme(root):
+    """ttk's "clam" theme, recoloured (the native Windows and macOS themes ignore colours)."""
+    import tkinter.font as tkfont
+    t, fam = THEME, ui_family()
+    root.configure(bg=t["bg"])
+    root.option_add("*Background", t["bg"])  # plain Tk widgets (pictures, links) sit on white too
+    for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont"):
+        try:
+            tkfont.nametofont(name).configure(family=fam, size=10)
+        except tk.TclError:
+            pass
+    s = ttk.Style(root)
+    s.theme_use("clam")
+    s.configure(".", background=t["bg"], foreground=t["text"], font=(fam, 10), bordercolor=t["border"],
+                focuscolor=t["blue"], lightcolor=t["card"], darkcolor=t["border"], troughcolor="#ece8f7")
+    s.map(".", foreground=[("disabled", t["disabled"])])
+    s.map("TLabel", background=[("disabled", t["card"])])  # clam greys a disabled label's background
+    s.configure("TLabelframe", background=t["card"], bordercolor=t["border"], lightcolor=t["border"],
+                darkcolor=t["border"], relief="solid", borderwidth=1)
+    s.configure("TLabelframe.Label", background=t["card"], foreground=t["purple2"], font=(fam, 11, "bold"))
+    for kind in ("TCheckbutton", "TRadiobutton"):
+        s.configure(kind, background=t["card"], foreground=t["text"])
+        s.map(kind, background=[("active", t["card"])], foreground=[("disabled", t["disabled"])])
+    s.configure("TCombobox", fieldbackground="#ffffff", background="#ffffff", foreground=t["text"],
+                arrowcolor=t["purple2"], bordercolor=t["border"], padding=(6, 3), selectbackground="#ffffff",
+                selectforeground=t["text"])
+    s.map("TCombobox", fieldbackground=[("readonly", "#ffffff"), ("disabled", "#f6f4fb")],
+          foreground=[("disabled", t["disabled"])], arrowcolor=[("disabled", t["disabled"])],
+          bordercolor=[("focus", t["blue"]), ("hover", t["lavender_line"])])
+    s.configure("TEntry", fieldbackground="#ffffff", bordercolor=t["border"], padding=(6, 3))
+    s.map("TEntry", bordercolor=[("focus", t["blue"])], fieldbackground=[("disabled", "#f6f4fb")])
+    s.configure("TSpinbox", fieldbackground="#ffffff", bordercolor=t["border"], arrowcolor=t["purple2"], padding=(6, 3))
+    s.configure("TButton", background="#ffffff", foreground=t["purple2"], bordercolor=t["border"],
+                padding=(12, 5), font=(fam, 10, "bold"), relief="flat")
+    s.map("TButton", background=[("disabled", t["card"]), ("pressed", t["tint"]), ("active", "#f7f4ff")],
+          foreground=[("disabled", t["disabled"])], bordercolor=[("active", t["lavender_line"])])
+    s.configure("Treeview", background="#ffffff", fieldbackground="#ffffff", foreground=t["text"],
+                rowheight=26, font=(fam, 10))
+    s.map("Treeview", background=[("selected", t["blue_soft"])], foreground=[("selected", t["blue_text"])])
+    s.configure("Treeview.Heading", background="#f6f4fb", foreground=t["muted"], font=(fam, 9, "bold"),
+                relief="flat", padding=(6, 4))
+    s.map("Treeview.Heading", background=[("active", "#efeaf9")])
+    s.configure("Horizontal.TProgressbar", troughcolor="#ece8f7", background=t["blue"], bordercolor="#ece8f7",
+                lightcolor=t["blue"], darkcolor=t["blue"])
+    for orient in ("Vertical", "Horizontal"):
+        s.configure(f"{orient}.TScrollbar", background="#ddd6ee", troughcolor="#f6f4fb", bordercolor="#f6f4fb",
+                    arrowcolor=t["muted"], lightcolor="#ddd6ee", darkcolor="#ddd6ee", gripcount=0)
+    s.configure("Horizontal.TScale", background=t["blue"], troughcolor="#ece8f7", bordercolor=t["border"])
+    root.option_add("*TCombobox*Listbox.background", "#ffffff")
+    root.option_add("*TCombobox*Listbox.foreground", t["text"])
+    root.option_add("*TCombobox*Listbox.selectBackground", t["blue"])
+    root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+    # Checkboxes and radio buttons: drawn ticks and dots (clam draws a tick as an X).
+    imgs = root._indicator_images = {(kind, on, en): _indicator_image(root, kind, on, en)
+                                     for kind in ("check", "radio") for on in (False, True) for en in (False, True)}
+    for kind, widget in (("check", "Checkbutton"), ("radio", "Radiobutton")):
+        name = f"Toolkit.{kind}.indicator"
+        try:
+            s.element_create(name, "image", imgs[(kind, False, True)],
+                             ("disabled", "selected", imgs[(kind, True, False)]),
+                             ("disabled", imgs[(kind, False, False)]),
+                             ("selected", imgs[(kind, True, True)]), padding=(0, 0, 6, 0), sticky="")
+        except tk.TclError:
+            pass
+        s.layout(f"T{widget}", [(f"{widget}.padding", {"sticky": "nswe", "children": [
+            (name, {"side": "left", "sticky": ""}),
+            (f"{widget}.focus", {"side": "left", "sticky": "w", "children": [
+                (f"{widget}.label", {"sticky": "nswe"})]})]})])
+    return fam
+
+
+class PillButton(tk.Canvas):
+    """A rounded blue button for the app's main action. Accepts .config(state=..., text=...)
+    like a ttk.Button, so the rest of the app drives it the same way."""
+
+    def __init__(self, parent, text, command, height=36, padx=24):
+        import tkinter.font as tkfont
+        self._font = tkfont.Font(family=ui_family(), size=11, weight="bold")
+        self._padx = padx
+        self._bh = height
+        self._bw = self._font.measure(text) + 2 * padx
+        super().__init__(parent, width=self._bw, height=height, bg=THEME["card"], highlightthickness=0, bd=0,
+                         cursor="hand2")
+        self._text, self._command, self._enabled, self._hover = text, command, True, False
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self.bind("<ButtonRelease-1>", self._click)
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        t = THEME
+        fill = t["disabled"] if not self._enabled else t["blue_hover"] if self._hover else t["blue"]
+        r, w, h = self._bh // 2, self._bw, self._bh
+        pts = [1 + r, 1, w - 1 - r, 1, w - 1, 1, w - 1, 1 + r, w - 1, h - 1 - r, w - 1, h - 1, w - 1 - r, h - 1,
+               1 + r, h - 1, 1, h - 1, 1, h - 1 - r, 1, 1 + r, 1, 1]
+        self.create_polygon(pts, smooth=True, fill=fill, outline=fill)
+        self.create_text(w / 2, h / 2, text=self._text, fill="#ffffff", font=self._font)
+
+    def _set_hover(self, on):
+        self._hover = on
+        self._draw()
+
+    def _click(self, event):
+        if self._enabled and 0 <= event.x <= self._bw and 0 <= event.y <= self._bh:
+            self._command()
+
+    def configure(self, cnf=None, **kw):
+        if "state" in kw:
+            self._enabled = kw.pop("state") != "disabled"
+            super().configure(cursor="hand2" if self._enabled else "")
+        if "text" in kw:
+            self._text = kw.pop("text")
+            self._bw = self._font.measure(self._text) + 2 * self._padx
+            super().configure(width=self._bw)
+        if "command" in kw:
+            self._command = kw.pop("command")
+        if cnf or kw:
+            super().configure(cnf, **kw)
+        self._draw()
+
+    config = configure
+
+    def cget(self, key):
+        if key == "state":
+            return "normal" if self._enabled else "disabled"
+        if key == "text":
+            return self._text
+        return super().cget(key)
+
+    def invoke(self):
+        if self._enabled:
+            self._command()
+
+
+def app_header(parent, title, tagline, logo):
+    """The app's bar: dark purple fading to blue, with its logo, name and what it does."""
+    t, fam = THEME, ui_family()
+    c = tk.Canvas(parent, height=60, highlightthickness=0, bd=0, bg=t["purple"])
+
+    def draw(event=None):
+        c.delete("all")
+        w = max(c.winfo_width(), 300)
+        a, b = (0x2b, 0x16, 0x55), (0x2f, 0x5c, 0xd6)
+        steps = 48
+        for i in range(steps):
+            k = (i / (steps - 1)) ** 2.2  # mostly purple, turning blue on the right
+            col = "#%02x%02x%02x" % tuple(round(a[j] + (b[j] - a[j]) * k) for j in range(3))
+            c.create_rectangle(i * w / steps, 0, (i + 1) * w / steps + 1, 60, fill=col, outline=col)
+        pts = [16 + 6, 12, 54 - 6, 12, 54, 12, 54, 18, 54, 42, 54, 48, 48, 48, 22, 48, 16, 48, 16, 42, 16, 18, 16, 12]
+        c.create_polygon(pts, smooth=True, fill="#ffffff", outline="#ffffff")
+        c.create_text(35, 30, text=logo, fill=t["purple2"], font=(fam, 11 if len(logo) <= 3 else 9, "bold"))
+        c.create_text(68, 21, text=title, anchor="w", fill="#ffffff", font=(fam, 15, "bold"))
+        c.create_text(69, 42, text=tagline, anchor="w", fill="#cfc6ff", font=(fam, 9))
+    c.bind("<Configure>", draw)
+    return c
+
+
 def main():
     if "--self-test" in sys.argv:
         sys.exit(self_test())
     root = tk.Tk()
-    try:  # nicer native look where available
-        ttk.Style().theme_use("vista" if sys.platform == "win32" else
-                              "aqua" if sys.platform == "darwin" else "clam")
-    except tk.TclError:
-        pass
+    apply_theme(root)
     UpscalerApp(root)
     root.mainloop()
 
