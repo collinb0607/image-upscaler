@@ -58,7 +58,7 @@ jobs:
         # One file, no console window. The program, its OpenMP library and the
         # two models go in an "engine" folder inside the app.
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name Image-Upscaler `
+          pyinstaller --noconfirm --icon assets/icon.ico --onefile --windowed --name Image-Upscaler `
             --add-binary "esrgan/realesrgan-ncnn-vulkan.exe;engine" --add-binary "esrgan/vcomp140.dll;engine" `
             --add-data "esrgan/models/realesrgan-x4plus.param;engine/models" --add-data "esrgan/models/realesrgan-x4plus.bin;engine/models" `
             --add-data "esrgan/models/realesrgan-x4plus-anime.param;engine/models" --add-data "esrgan/models/realesrgan-x4plus-anime.bin;engine/models" `
@@ -70,7 +70,7 @@ jobs:
         # A .app bundle (one-dir: macOS apps are folders). ditto keeps the
         # permissions and code signature that a plain zip would lose.
         run: |
-          pyinstaller --noconfirm --windowed --name "Image Upscaler" \
+          pyinstaller --noconfirm --icon assets/icon.icns --windowed --name "Image Upscaler" \
             --add-binary "esrgan/realesrgan-ncnn-vulkan:engine" \
             --add-data "esrgan/models/realesrgan-x4plus.param:engine/models" --add-data "esrgan/models/realesrgan-x4plus.bin:engine/models" \
             --add-data "esrgan/models/realesrgan-x4plus-anime.param:engine/models" --add-data "esrgan/models/realesrgan-x4plus-anime.bin:engine/models" \
